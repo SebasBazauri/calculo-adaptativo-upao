@@ -2,10 +2,12 @@ import { useEffect, useState } from 'react';
 import { ArrowUpRight, BookOpen, ChartNoAxesCombined, Check, ChevronRight, Download, FlaskConical, Lightbulb, LoaderCircle, PanelLeftClose, Play, RotateCcw, Target } from 'lucide-react';
 import { api, downloadAttempts, type Exercise, type Progress, type Result, type Topic } from './api';
 
+import ExamGenerator from './components/ExamGenerator';
+import ExamHistory from './components/ExamHistory';
 import TheoryCatalog from './components/TheoryCatalog';
 import GeoGebraLab from './components/GeoGebraLab';
 
-type View = 'learn' | 'catalog' | 'lab' | 'progress';
+type View = 'learn' | 'catalog' | 'lab' | 'progress' | 'exams' | 'exam-history';
 const levels = ['Inicial', 'En práctica', 'Avanzado'];
 
 function Curve({ interactive = false }: { interactive?: boolean }) {
@@ -33,6 +35,7 @@ function Curve({ interactive = false }: { interactive?: boolean }) {
 export default function App() {
   const [view, setView] = useState<View>('learn');
   const [labId, setLabId] = useState('limit-value');
+  const [activeExamId, setActiveExamId] = useState<string | null>(null);
   const [topics, setTopics] = useState<Topic[]>([]);
   const [progress, setProgress] = useState<Progress | null>(null);
   const [exercise, setExercise] = useState<Exercise | null>(null);
@@ -83,15 +86,15 @@ export default function App() {
       <a className="brand" href="#" onClick={e => { e.preventDefault(); setView('learn'); }}><span className="brand-symbol">ƒ</span><span>Cálculo<span className="brand-caption">APRENDE A TU RITMO</span></span></a>
       <div className="workspace-label">ESPACIO DE ESTUDIO <PanelLeftClose size={15} aria-hidden="true" /></div>
       <nav aria-label="Navegación principal">
-        {([{ id: 'learn', title: 'Mi aprendizaje', icon: BookOpen }, { id: 'catalog', title: 'Catálogo teórico', icon: BookOpen }, { id: 'lab', title: 'Laboratorio visual', icon: FlaskConical }, { id: 'progress', title: 'Mi progreso', icon: ChartNoAxesCombined }] as const).map(item => <button key={item.id} className={view === item.id ? 'nav-item active' : 'nav-item'} onClick={() => setView(item.id)}><item.icon size={19} />{item.title}{view === item.id && <span className="active-dot" />}</button>)}
+        {([{ id: 'learn', title: 'Mi aprendizaje', icon: BookOpen }, { id: 'catalog', title: 'Catálogo teórico', icon: BookOpen }, { id: 'lab', title: 'Laboratorio visual', icon: FlaskConical }, { id: 'progress', title: 'Mi progreso', icon: ChartNoAxesCombined }, { id: 'exams', title: 'Generar examen', icon: BookOpen }, { id: 'exam-history', title: 'Historial de exámenes', icon: ChartNoAxesCombined }] as const).map(item => <button key={item.id} className={view === item.id ? 'nav-item active' : 'nav-item'} onClick={() => setView(item.id)}><item.icon size={19} />{item.title}{view === item.id && <span className="active-dot" />}</button>)}
       </nav>
       <div className="sidebar-note"><span className="note-line" /><h3>Entender toma práctica.</h3><p>Explora una idea, prueba tu respuesta y sigue avanzando.</p><span className="note-formula">lim <span>Δx → 0</span></span></div>
       <div className="sidebar-footer"><span className="avatar">E</span><div>Estudiante de prueba<small>Sesión local de demostración</small></div></div>
     </aside>
     <div className="main-shell">
-      <header className="topbar"><div>Cálculo I <ChevronRight size={14} /><strong>{view === 'learn' ? 'Mi aprendizaje' : view === 'catalog' ? 'Catálogo teórico' : view === 'lab' ? 'Laboratorio visual' : 'Mi progreso'}</strong></div><span className="demo-badge">DEMO ACADÉMICA</span></header>
+      <header className="topbar"><div>Cálculo I <ChevronRight size={14} /><strong>{view === 'learn' ? 'Mi aprendizaje' : view === 'exams' ? 'Generar examen' : view === 'exam-history' ? 'Historial de exámenes' : view === 'catalog' ? 'Catálogo teórico' : view === 'lab' ? 'Laboratorio visual' : 'Mi progreso'}</strong></div><span className="demo-badge">DEMO ACADÉMICA</span></header>
       <main>
-        <div className="page-heading"><div className="eyebrow">TU ESPACIO PARA COMPRENDER</div><h1>{view === 'learn' ? 'Una idea a la vez.' : view === 'catalog' ? 'Comprende antes de resolver.' : view === 'lab' ? 'Haz visible el cambio.' : 'Cada intento cuenta.'}</h1><p>{view === 'learn' ? 'Practica, explora y construye tu comprensión de Cálculo I.' : view === 'catalog' ? 'Conceptos, ejemplos y actividades para construir tus bases.' : view === 'lab' ? 'Elige un tema y experimenta con sus herramientas en GeoGebra.' : 'Revisa la actividad guardada en tu sesión de demostración.'}</p></div>
+        <div className="page-heading"><div className="eyebrow">TU ESPACIO PARA COMPRENDER</div><h1>{view === 'exams' ? 'Pon a prueba lo aprendido.' : view === 'exam-history' ? 'Observa tu recorrido.' : view === 'learn' ? 'Una idea a la vez.' : view === 'catalog' ? 'Comprende antes de resolver.' : view === 'lab' ? 'Haz visible el cambio.' : 'Cada intento cuenta.'}</h1><p>{view === 'exams' ? 'Genera una autoevaluación y revisa sus soluciones al terminar.' : view === 'exam-history' ? 'Consulta tus intentos y resultados reales de autoevaluación.' : view === 'learn' ? 'Practica, explora y construye tu comprensión de Cálculo I.' : view === 'catalog' ? 'Conceptos, ejemplos y actividades para construir tus bases.' : view === 'lab' ? 'Elige un tema y experimenta con sus herramientas en GeoGebra.' : 'Revisa la actividad guardada en tu sesión de demostración.'}</p></div>
         {error && <div className="error-box" role="alert"><span>{error}</span><button onClick={() => void load()} disabled={loading}>Reintentar</button></div>}
         {loading && (view === 'learn' || view === 'progress') ? <div className="loading" role="status"><LoaderCircle className="spin" /> Preparando tu espacio…</div> : <>
           {view === 'learn' && <>
@@ -108,6 +111,8 @@ export default function App() {
             <div className="topic-grid">{topics.map(topic => { const state = progress?.topics.find(t => t.id === topic.id); return <article className="topic-card" key={topic.id}><div className="topic-top"><span className="topic-symbol">{topic.id === 'limits' ? 'lim' : 'ƒ′'}</span><span className="unit-label">TEMA {topic.unit}</span></div><h3>{topic.title}</h3><p>{topic.subtitle}</p><div className="topic-meta"><span>{levels[(state?.level ?? 1)-1]}</span><span>{state?.attempts ?? 0} intentos</span></div><button className="topic-action" disabled={busy} onClick={() => void start(topic.id)}>{state?.attempts ? 'Continuar práctica' : 'Explorar tema'}<ArrowUpRight size={19} /></button></article>; })}</div>
             <section className="lab-callout"><span className="lab-icon"><FlaskConical size={24} /></span><div><h3>¿Y si pudieras verlo?</h3><p>Explora límites y derivadas con herramientas de GeoGebra.</p></div><button className="text-button" onClick={() => setView('lab')}>Abrir laboratorio <ArrowUpRight size={17} /></button></section>
           </>}
+          {view === 'exams' && <ExamGenerator examId={activeExamId} onOpen={setActiveExamId} onHistory={() => setView('exam-history')} />}
+          {view === 'exam-history' && <ExamHistory onOpen={id => { setActiveExamId(id); setView('exams'); }} onNew={() => { setActiveExamId(null); setView('exams'); }} />}
           {view === 'catalog' && <TheoryCatalog initialLessonId={labId} onLab={id => { setLabId(id); setView('lab'); }} onPractice={topic => { setView('learn'); void start(topic); }} />}
           {view === 'lab' && <GeoGebraLab selected={labId} onSelect={setLabId} onTheory={() => setView('catalog')} onPractice={topic => { setView('learn'); void start(topic); }} />}
           {view === 'progress' && <section className="progress-panel"><div className="section-heading"><div><h2>Tu práctica, en números</h2><p>Son registros de práctica; no representan una nota del curso.</p></div><button className="button secondary" disabled={busy || !progress?.attempts} onClick={() => void exportData()}><Download size={17} />Exportar CSV</button></div><div className="progress-total"><strong>{progress?.attempts ?? 0}</strong><span>ejercicios enviados</span><span className="correct-total"><Check size={18} />{progress?.correct ?? 0} correctos</span></div>{topics.map(topic => { const state = progress?.topics.find(t => t.id === topic.id); return <div className="progress-topic" key={topic.id}><div><h3>{topic.title}</h3><p>{state?.attempts ?? 0} intentos registrados</p></div><span>Nivel {state?.level ?? 1} de 3</span><div className="level-bars" aria-label={`Nivel ${state?.level ?? 1} de 3`}>{[1,2,3].map(n => <span key={n} className={n <= (state?.level ?? 1) ? 'filled' : ''} />)}</div></div>; })}<p className="adaptation-note"><RotateCcw size={18} />Regla de esta demo: tres aciertos consecutivos suben un nivel; un error reduce un nivel, hasta el mínimo de uno. Esta regla todavía requiere validación pedagógica.</p></section>}

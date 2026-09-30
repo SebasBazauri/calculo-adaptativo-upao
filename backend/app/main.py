@@ -2,110 +2,21 @@
 import csv
 import io
 import os
-import random
-import re
 import secrets
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
-from sqlalchemy import Boolean, ForeignKey, Integer, String, create_engine, select
+from sqlalchemy import create_engine, select, event
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
+from sqlalchemy.orm import Session
 from sympy import Rational
-
-
-def now():
-    return datetime.now(timezone.utc).isoformat()
-
-
-class Base(DeclarativeBase):
-    pass
-
-
-class Learner(Base):
-    __tablename__ = 'demo_learners'
-    token: Mapped[str] = mapped_column(String(64), primary_key=True)
-
-
-class Exercise(Base):
-    __tablename__ = 'exercises'
-    id: Mapped[str] = mapped_column(String(40), primary_key=True)
-    learner: Mapped[str] = mapped_column(ForeignKey('demo_learners.token'))
-    topic: Mapped[str] = mapped_column(String(30))
-    level: Mapped[int] = mapped_column(Integer)
-    prompt: Mapped[str] = mapped_column(String(500))
-    formula: Mapped[str] = mapped_column(String(300))
-    expected: Mapped[str] = mapped_column(String(100))
-    hint: Mapped[str] = mapped_column(String(500))
-    explanation: Mapped[str] = mapped_column(String(500))
-    created_at: Mapped[str] = mapped_column(String(40), default=now)
-    hint_used: Mapped[bool] = mapped_column(Boolean, default=False)
-    version: Mapped[str] = mapped_column(String(30), default='demo-1')
-
-
-class Attempt(Base):
-    __tablename__ = 'attempts'
-    exercise_id: Mapped[str] = mapped_column(ForeignKey('exercises.id'), primary_key=True)
-    answer: Mapped[str] = mapped_column(String(80))
-    correct: Mapped[bool] = mapped_column(Boolean)
-    submitted_at: Mapped[str] = mapped_column(String(40), default=now)
-
-
-TOPICS = [
-    {'id': 'limits', 'title': 'Límites', 'subtitle': 'Entiende a dónde se acerca una función.', 'unit': '01'},
-    {'id': 'derivatives', 'title': 'Derivadas', 'subtitle': 'Explora cómo cambia una función.', 'unit': '02'},
-]
-
-
-def level_for(attempts):
-    """Regla demo: tres aciertos consecutivos suben un nivel; un fallo reinicia la racha."""
-    level, streak = 1, 0
-    for attempt in attempts:
-        streak = streak + 1 if attempt.correct else 0
-        if streak == 3:
-            level = min(3, level + 1)
-            streak = 0
-        if not attempt.correct:
-            level = max(1, level - 1)
-    return level
-
-
-def generate(topic, level):
-    a, b, x = random.randint(1, 5), random.randint(1, 6), random.randint(1, 4)
-    if topic == 'limits':
-        if level == 1:
-            return ('Calcula el límite por sustitución directa.', f'lim x → {x}   ({a}x + {b})', str(a*x+b),
-                    f'Sustituye x por {x} en {a}x + {b}.', f'{a} × {x} + {b} = {a*x+b}. La función es continua.')
-        if level == 2:
-            return ('Calcula el límite de esta función cuadrática.', f'lim x → {x}   ({a}x² + {b})', str(a*x*x+b),
-                    'Un polinomio es continuo. Sustituye primero y respeta el orden de las operaciones.', f'{a} × {x}² + {b} = {a*x*x+b}.')
-        return ('Resuelve la indeterminación antes de calcular el límite.', f'lim x → {x}   (x² − {x*x}) / (x − {x})', str(2*x),
-                f'Factoriza x² − {x*x} como (x − {x})(x + {x}).', f'Para x ≠ {x}, el cociente es x + {x}. Su límite es {2*x}.')
-    power = level + 1
-    result = a*power*x**(power-1)
-    return (f'Encuentra el valor de la derivada en x = {x}.', f'f(x) = {a}x{ {2:"²",3:"³",4:"⁴"}[power]} + {b}', str(result),
-            f'Usa la regla de la potencia: la derivada de axⁿ es a·n·xⁿ⁻¹. La constante desaparece.',
-            f'f′({x}) = {a} × {power} × {x}^{power-1} = {result}.')
-
-
-def parse_number(value):
-    value = value.strip().replace(',', '.')
-    if not re.fullmatch(r'[+-]?\d{1,12}(?:\.\d{1,10})?(?:/[+-]?\d{1,12})?', value):
-        raise HTTPException(422, 'Escribe un número, un decimal o una fracción como 3/2.')
-    try:
-        pieces = value.split('/')
-        number = Rational(pieces[0])
-        if len(pieces) == 2:
-            if int(pieces[1]) == 0:
-                raise ValueError()
-            number /= int(pieces[1])
-        return number
-    except (ValueError, TypeError, ZeroDivisionError):
-        raise HTTPException(422, 'La fracción debe tener un denominador distinto de cero.')
+from .models import Base, Learner, Exercise, Attempt
+from .exercises import TOPICS, generate, parse_number, level_for, RESOURCE_VERSION
+from .migrations import upgrade_schema
+from .exams import build_exam_router
 
 
 class AnswerInput(BaseModel):
@@ -116,9 +27,14 @@ def create_app(database_url=None):
     url = database_url or os.getenv('DATABASE_URL', 'sqlite:///./calculo.db')
     engine = create_engine(url, connect_args={'check_same_thread': False} if url.startswith('sqlite') else {})
 
+    if url.startswith('sqlite'):
+        @event.listens_for(engine, 'connect')
+        def sqlite_foreign_keys(connection, _):
+            connection.execute('PRAGMA foreign_keys=ON')
+
     @asynccontextmanager
     async def lifespan(app):
-        Base.metadata.create_all(engine)
+        upgrade_schema(engine)
         yield
         engine.dispose()
 
@@ -187,7 +103,7 @@ def create_app(database_url=None):
         level = level_for(history(session, token, topic))
         prompt, formula, expected, hint, explanation = generate(topic, level)
         exercise = Exercise(id=secrets.token_hex(16), learner=token, topic=topic, level=level,
-                            prompt=prompt, formula=formula, expected=expected, hint=hint, explanation=explanation)
+                            prompt=prompt, formula=formula, expected=expected, hint=hint, explanation=explanation, version=RESOURCE_VERSION)
         session.add(exercise)
         session.commit()
         return public(exercise)
@@ -231,6 +147,7 @@ def create_app(database_url=None):
         return Response(buffer.getvalue(), media_type='text/csv; charset=utf-8',
                         headers={'Content-Disposition': 'attachment; filename="practica-demo.csv"'})
 
+    app.include_router(build_exam_router(db, learner))
     return app
 
 

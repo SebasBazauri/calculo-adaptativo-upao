@@ -78,3 +78,23 @@ def test_derivative_generators_match_power_rule(level):
         point = int(re.search(r'x = (\d+)', prompt).group(1))
         coefficient = int(re.search(r'= (\d+)x', formula).group(1))
         assert parse_number(expected) == coefficient * (level + 1) * point**level
+
+
+@pytest.mark.parametrize('level', [1, 2, 3])
+def test_limit_generators_match_symbolic_limit(level):
+    import re
+    from sympy import Symbol, limit
+    from app.exercises import generate, parse_number
+    x = Symbol('x')
+    for _ in range(15):
+        _, formula, expected, _, _ = generate('limits', level)
+        values = list(map(int, re.findall(r'\d+', formula)))
+        point, coefficient = values[:2]
+        constant = values[-1]
+        if level == 1:
+            expression = coefficient*x + constant
+        elif level == 2:
+            expression = coefficient*x*x + constant
+        else:
+            expression = coefficient*(x*x-point*point)/(x-point) + constant
+        assert parse_number(expected) == limit(expression, x, point)
