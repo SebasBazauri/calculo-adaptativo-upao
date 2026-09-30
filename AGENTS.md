@@ -31,6 +31,23 @@ La versión actual es una demostración local. Diferenciar claramente funcionali
 - La API es la autoridad para calificar y registrar intentos; no confiar en respuestas correctas calculadas por el navegador.
 - No ejecutar entradas del estudiante con `eval`, `exec` o parsers de expresiones sin restricciones. El alcance actual admite números, decimales y fracciones, no expresiones simbólicas arbitrarias.
 - Mantener interfaz en español, controles etiquetados, navegación por teclado, estados de carga/error y diseño adaptable a móvil.
+- Modelos persistentes en `backend/app/models.py`; generación/corrección compartida en `exercises.py`; autoevaluaciones en `exams.py`. `main.py` conserva el arranque, dependencias y endpoints de práctica.
+- `backend/app/migrations.py` aplica revisiones aditivas numeradas y registra `schema_migrations`. No cambiar una revisión ya aplicada ni usar `create_all` para alterar columnas. Antes de migrar datos existentes, respaldar y verificar preservación e integridad. No borrar la base para actualizar el esquema.
+
+## Reglas del módulo de exámenes
+
+- El módulo es de autoevaluación de práctica. No presentarlo como pretest/postest validado, nota oficial ni medición causal de la tesis.
+- Reutilizar `Learner` y la dependencia de sesión existente. No inventar cuentas, roles o un vínculo usuario–estudiante que el sistema no tiene. Todos los endpoints deben filtrar por propietario en backend, incluidos historial y métricas.
+- `exams`, `exam_questions` y `exam_responses` están separados de `exercises`/`attempts`. No permitir que las rutas de práctica revelen o respondan preguntas de examen. No alimentar la adaptación de práctica con respuestas de examen sin un cambio explícito de alcance.
+- Cada examen representa un intento. Sus preguntas, soluciones, explicaciones y versión son snapshots inmutables. No regenerarlos al abrir el historial ni al actualizar el banco.
+- Generación con `request_id` UUID único por sesión para reintentos idempotentes. Respetar límites de 3–20 preguntas, nivel entero 1–3, temas existentes y preguntas distintas dentro de un examen.
+- La corrección ocurre en servidor. Rechazar campos extra como puntaje/corrección del cliente, IDs repetidos o ajenos y respuestas inválidas. No exponer soluciones ni explicaciones antes de finalizar.
+- La finalización debe ser atómica y soportar concurrencia: un único resultado, reenvío idéntico idempotente y cambio posterior rechazado con 409. No persistir parcialmente preguntas o resultados ante errores.
+- Puntaje 0–20 y porcentaje derivados de aciertos/preguntas con peso uniforme. Omitidas cuentan como incorrectas y se informan aparte. Diferenciar promedio por examen de acierto global por pregunta; excluir pendientes de toda métrica de resultados.
+- Las marcas UTC del servidor miden tiempo transcurrido, incluidas pausas; no son tiempo activo ni un límite de examen.
+- `src/exams.ts` define contratos; `ExamGenerator.tsx` y `ExamHistory.tsx` integran las vistas. Los borradores son locales al navegador, no autosalvado en servidor. Indicar fallo de almacenamiento sin perder las respuestas en memoria.
+- Al cambiar el generador, incrementar la versión de recursos nuevos y conservar snapshots previos. La versión actual es `demo-2`.
+- Probar permisos, validación, reenvíos, concurrencia, denominadores de métricas y migración desde el esquema anterior. No agregar librerías para gráficos simples: se usa SVG.
 
 ## Invariantes de aprendizaje y datos
 
@@ -77,9 +94,10 @@ Con ambos servidores activos, desde `backend`:
 
 ```powershell
 .venv/Scripts/python.exe tests/smoke_local.py http://127.0.0.1:5173
+.venv/Scripts/python.exe tests/smoke_exams.py http://127.0.0.1:5173
 ```
 
-El smoke test crea una sesión demo y tres intentos. Ajustar la URL al puerto real. No ejecutarlo sobre datos de investigación.
+El smoke de práctica crea una sesión demo y tres intentos. El de exámenes crea un examen en una sesión nueva y otra sesión para comprobar denegación de acceso. Ajustar la URL al puerto real. No ejecutarlos sobre datos de investigación. Para evitar caché de pytest en un entorno con permisos conflictivos se puede usar `-p no:cacheprovider`.
 
 Ejecutar comprobaciones proporcionales al cambio: build para frontend; pruebas para backend; integración HTTP cuando cambie el contrato entre ambos. Para cambios visuales, inspeccionar en navegador si está disponible. No afirmar validación visual basándose solo en una compilación o respuesta HTTP. Para ediciones solo documentales basta comprobar contenido y enlaces.
 

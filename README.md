@@ -4,6 +4,16 @@ Aplicación web de recursos académicos adaptativos para Cálculo I, desarrollad
 
 ## Primera entrega · 0.1.0
 
+### Autoevaluaciones, historial y rendimiento
+
+En **Generar examen**, elige límites, derivadas o ambos, nivel 1–3 y entre 3 y 20 preguntas. Resuelve y confirma el envío para recibir puntaje 0–20, porcentaje, aciertos, errores y soluciones. El servidor guarda un solo resultado por examen; para otro intento genera uno nuevo.
+
+**Historial de exámenes** permite continuar pendientes o consultar resultados anteriores de tu sesión. Muestra promedios, desglose por tema y evolución de los últimos diez envíos, calculados a partir de resultados reales. Los exámenes pendientes no entran en las métricas. Incorrectas incluye omitidas, que también se informan aparte.
+
+El borrador se guarda solo en este navegador. El examen y resultado final se conservan en la base; al borrar el token de sesión pierdes acceso desde el navegador. El tiempo mostrado es el intervalo generación–envío e incluye pausas. No existe límite de tiempo ni medición de tiempo activo.
+
+Estas autoevaluaciones son práctica: **no son pretest/postest validados ni notas oficiales de la tesis**. Se mantienen separadas de los intentos del motor adaptativo. Detalle técnico en [entrega 03](docs/entrega-03-examenes.md) y recomendaciones en [mejoras desde la tesis](docs/mejoras-desde-la-tesis.md).
+
 ### Ampliación: catálogo y GeoGebra
 
 La navegación incluye **Catálogo teórico**, con búsqueda, filtro por tema y seis lecciones: idea de límite, indeterminación/factorización, límites laterales/continuidad, secante y derivada, reglas básicas y ecuación de la tangente. Cada lección tiene objetivo, títulos, subtítulos, explicación y ejemplo resuelto.
@@ -79,6 +89,15 @@ cd backend
 .venv/Scripts/python.exe -m pytest -q
 ```
 
+Con API e interfaz encendidas, desde `backend`:
+
+```powershell
+.venv/Scripts/python.exe tests/smoke_exams.py http://127.0.0.1:5174
+.venv/Scripts/python.exe tests/smoke_local.py http://127.0.0.1:5174
+```
+
+Usa 5173 si ejecutas el puerto predeterminado. Estos scripts crean sus propias sesiones demo. No hay framework de tests frontend ni comando de lint; el build incluye el type-check TypeScript.
+
 ## Datos y configuración
 
 Por defecto, la API crea `backend/calculo.db` al iniciarse desde `backend`. Los intentos se conservan al reiniciar. El navegador conserva un token de demostración en almacenamiento local; al borrar ese almacenamiento se pierde acceso desde ese navegador a la sesión anterior. La exportación solo incluye esa sesión y nunca contiene su token.
@@ -89,14 +108,14 @@ Por defecto, la API crea `backend/calculo.db` al iniciarse desde `backend`. Los 
 $env:DATABASE_URL = 'postgresql+psycopg://usuario:clave@localhost:5432/calculo'
 ```
 
-`backend/.env.example` documenta la variable, pero el servidor no carga archivos `.env` automáticamente. No subir credenciales. El esquema se crea con `create_all` solo para este prototipo; incorporar migraciones antes de modificar un esquema usado en campo. PostgreSQL requiere una instancia propia y su integración aún no está verificada.
+`backend/.env.example` documenta la variable, pero el servidor no carga archivos `.env` automáticamente. No subir credenciales. `backend/app/migrations.py` aplica migraciones aditivas numeradas al arrancar: 001 reconoce las tablas de práctica y 002 añade exámenes; `schema_migrations` registra las revisiones. Respaldar antes de actualizar una base existente e iniciar un solo proceso de migración a la vez. Nunca borrar la base para aplicar cambios. Las revisiones actuales no alteran columnas; cambios futuros requieren nuevas migraciones explícitas. PostgreSQL requiere una instancia propia y su integración aún no está verificada.
 
 ## Estructura
 
 ```text
 src/                    Interfaz y cliente de API
 public/                 Favicon
-backend/app/            API, persistencia y ejercicios
+backend/app/            API, modelos, migraciones, ejercicios y exámenes
 backend/tests/          Pruebas de API y adaptación
 docs/                   Planificación y alcance de la entrega
 .github/workflows/      Verificación de build y pruebas
